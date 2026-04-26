@@ -1,0 +1,852 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <!-- COOP/COEP対策: ルートに配置された coi-serviceworker.js を読み込む -->
+    <script src="coi-serviceworker.js"></script>
+
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>WebShell Container M3</title>
+
+    <!-- Google Fonts & Material Symbols -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Google+Sans:ital,opsz,wght@0,17..18,400..700;1,17..18,400..700&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet">
+    
+    <!-- xterm.js CSS -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" />
+
+    <!-- Import Map for Material Web & WebContainers & xterm -->
+    <script type="importmap">
+    {
+        "imports": {
+            "@material/web/": "https://esm.run/@material/web/",
+            "@webcontainer/api": "https://esm.run/@webcontainer/api",
+            "xterm": "https://esm.run/xterm",
+            "xterm-addon-fit": "https://esm.run/xterm-addon-fit"
+        }
+    }
+    </script>
+
+    <style>
+        /* * Material 3 Design Tokens - Google Blue (Fixed)
+         */
+        :root {
+            /* Light Mode Tokens */
+            --md-sys-color-primary: #0b57d0;
+            --md-sys-color-on-primary: #ffffff;
+            --md-sys-color-primary-container: #d3e3fd;
+            --md-sys-color-on-primary-container: #041e49;
+            --md-sys-color-secondary: #006391;
+            --md-sys-color-on-secondary: #ffffff;
+            --md-sys-color-secondary-container: #c2e7ff;
+            --md-sys-color-on-secondary-container: #001d35;
+            --md-sys-color-tertiary: #0b57d0;
+            --md-sys-color-on-tertiary: #ffffff;
+            --md-sys-color-background: #f8f9fa;
+            --md-sys-color-on-background: #1f1f1f;
+            --md-sys-color-surface: #f8f9fa;
+            --md-sys-color-on-surface: #1f1f1f;
+            --md-sys-color-surface-variant: #e1e3e1;
+            --md-sys-color-on-surface-variant: #444746;
+            --md-sys-color-outline: #747775;
+            --md-sys-color-outline-variant: #c4c7c5;
+            --md-sys-color-error: #b3261e;
+            --md-sys-color-on-error: #ffffff;
+            
+            /* Typography */
+            --md-ref-typeface-brand: 'Google Sans', sans-serif;
+            --md-ref-typeface-plain: 'Roboto', sans-serif;
+
+            --transition-duration: 0.3s;
+        }
+
+        /* Dark Mode Override */
+        [data-theme="dark"] {
+            --md-sys-color-primary: #a8c7fa;
+            --md-sys-color-on-primary: #062e6f;
+            --md-sys-color-primary-container: #0842a0;
+            --md-sys-color-on-primary-container: #d3e3fd;
+            --md-sys-color-secondary: #7fcfff;
+            --md-sys-color-on-secondary: #00334d;
+            --md-sys-color-secondary-container: #004a6e;
+            --md-sys-color-on-secondary-container: #c2e7ff;
+            --md-sys-color-background: #1b1b1b;
+            --md-sys-color-on-background: #e3e3e3;
+            --md-sys-color-surface: #1b1b1b;
+            --md-sys-color-on-surface: #e3e3e3;
+            --md-sys-color-surface-variant: #444746;
+            --md-sys-color-on-surface-variant: #c4c7c5;
+            --md-sys-color-outline: #8e918f;
+            --md-sys-color-outline-variant: #444746;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: var(--md-ref-typeface-plain);
+            background-color: var(--md-sys-color-background);
+            color: var(--md-sys-color-on-background);
+            transition: background-color var(--transition-duration), color var(--transition-duration), margin-left 0.3s;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* Layout */
+        header {
+            background-color: var(--md-sys-color-surface);
+            color: var(--md-sys-color-on-surface);
+            padding: 12px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        header h1 {
+            margin: 0;
+            font-family: var(--md-ref-typeface-brand);
+            font-size: 22px;
+            font-weight: 400;
+        }
+
+        main {
+            flex: 1;
+            padding: 16px;
+            max-width: 900px; /* Slightly wider for terminal */
+            margin: 0 auto;
+            width: 100%;
+            box-sizing: border-box;
+            padding-bottom: 120px;
+            transition: padding-bottom 0.3s;
+        }
+
+        /* View Management */
+        .view-section {
+            display: none;
+            animation: fadeScale 0.25s cubic-bezier(0.2, 0, 0, 1) forwards;
+        }
+        .view-section.active {
+            display: block;
+        }
+
+        @keyframes fadeScale {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .section-card {
+            background-color: var(--md-sys-color-surface);
+            border-radius: 28px;
+            padding: 24px;
+            margin-bottom: 24px;
+            border: 1px solid var(--md-sys-color-outline-variant);
+        }
+
+        .section-title {
+            font-family: var(--md-ref-typeface-brand);
+            font-size: 1.5rem;
+            font-weight: 400;
+            margin-bottom: 20px;
+            color: var(--md-sys-color-primary);
+        }
+
+        h3.sub-title {
+            font-family: var(--md-ref-typeface-plain);
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: var(--md-sys-color-on-surface-variant);
+            margin: 24px 0 12px 0;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+        }
+
+        .flex-row-wrap {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        /* Hero Display for Google Blue */
+        .hero-banner {
+            background-color: var(--md-sys-color-primary-container);
+            color: var(--md-sys-color-on-primary-container);
+            border-radius: 28px;
+            padding: 32px;
+            margin-bottom: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .hero-banner h2 {
+            font-family: var(--md-ref-typeface-brand);
+            margin: 0;
+            font-size: 2rem;
+        }
+
+        /* Floating Action Button */
+        .fab-container {
+            position: fixed;
+            bottom: 100px;
+            right: 24px;
+            z-index: 6;
+            transition: all 0.3s;
+        }
+
+        /* Custom Navigation */
+        .custom-nav {
+            position: fixed;
+            background-color: var(--md-sys-color-surface);
+            display: flex;
+            align-items: center;
+            z-index: 100;
+            transition: all 0.3s ease;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 80px;
+            justify-content: space-evenly;
+            padding-bottom: env(safe-area-inset-bottom);
+            box-shadow: 0 -1px 3px 0 rgba(0,0,0,0.1);
+        }
+
+        .nav-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            flex: 1;
+            height: 100%;
+            cursor: pointer;
+            color: var(--md-sys-color-on-surface-variant);
+            user-select: none;
+        }
+
+        .nav-icon-container {
+            width: 64px;
+            height: 32px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            border-radius: 16px;
+            margin-bottom: 4px;
+            transition: all 0.2s cubic-bezier(0.2, 0, 0, 1);
+        }
+
+        .nav-item .material-symbols-outlined {
+            font-size: 24px;
+            font-variation-settings: 'FILL' 0;
+        }
+
+        .nav-label {
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .nav-item.active .nav-icon-container {
+            background-color: var(--md-sys-color-secondary-container);
+            color: var(--md-sys-color-on-secondary-container);
+        }
+
+        .nav-item.active .material-symbols-outlined {
+            font-variation-settings: 'FILL' 1;
+        }
+
+        @media (min-width: 600px) {
+            body { margin-left: 80px; }
+            main { padding-bottom: 32px; }
+            .custom-nav {
+                top: 0; bottom: 0; left: 0; right: auto;
+                width: 80px; height: 100%; flex-direction: column;
+                justify-content: flex-start; padding-top: 32px;
+            }
+            .nav-item { flex: none; height: 72px; width: 100%; margin-bottom: 12px; }
+            .fab-container { bottom: 32px; right: 32px; }
+        }
+
+        /* M3 Cards Custom */
+        .m3-card {
+            border-radius: 12px;
+            background-color: var(--md-sys-color-surface);
+            color: var(--md-sys-color-on-surface);
+            margin-bottom: 16px;
+            overflow: hidden;
+            border: 1px solid var(--md-sys-color-outline-variant);
+            transition: box-shadow 0.2s;
+            position: relative;
+        }
+        .m3-card.elevated {
+            border: none;
+            background-color: var(--md-sys-color-surface-variant);
+            box-shadow: 0px 1px 3px 1px rgba(0,0,0,0.15);
+        }
+        .m3-card-content { padding: 16px; }
+
+        /* Dark Mode for Dialog explicitly */
+        md-dialog {
+            --md-dialog-container-color: var(--md-sys-color-surface);
+        }
+
+        /* --- WebShell App Specific Styles --- */
+        
+        #terminal-container {
+            width: 100%;
+            height: 60vh;
+            min-height: 400px;
+            background-color: #111;
+            border-radius: 16px;
+            padding: 12px;
+            box-sizing: border-box;
+            overflow: hidden;
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.5);
+            border: 1px solid var(--md-sys-color-outline-variant);
+        }
+        .xterm-viewport {
+            border-radius: 8px;
+        }
+        
+        .code-textarea {
+            width: 100%;
+            min-height: 400px;
+            font-family: 'Courier New', Courier, monospace;
+            background-color: var(--md-sys-color-surface-variant);
+            color: var(--md-sys-color-on-surface);
+            border: 1px solid var(--md-sys-color-outline);
+            border-radius: 12px;
+            padding: 16px;
+            box-sizing: border-box;
+            resize: vertical;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+        .code-textarea:focus {
+            outline: 2px solid var(--md-sys-color-primary);
+        }
+
+        #boot-progress-container {
+            display: none;
+            margin-top: 24px;
+            padding: 20px;
+            background: var(--md-sys-color-surface-variant);
+            border-radius: 16px;
+            text-align: center;
+        }
+
+        iframe#preview-frame {
+            width: 100%;
+            height: 500px;
+            border: 2px solid var(--md-sys-color-outline-variant);
+            border-radius: 16px;
+            background: #ffffff; /* iFrame always white background for standard preview */
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div style="display:flex; align-items:center; gap:12px;">
+            <md-icon-button><span class="material-symbols-outlined">menu</span></md-icon-button>
+            <h1>WebShell Container M3</h1>
+        </div>
+        <div style="display:flex; align-items:center;">
+            <md-icon-button onclick="window.toggleDarkMode()">
+                <span class="material-symbols-outlined" id="theme-icon">dark_mode</span>
+            </md-icon-button>
+            <md-icon-button id="usage-anchor">
+                <span class="material-symbols-outlined">info</span>
+            </md-icon-button>
+            <md-menu anchor="usage-anchor" id="usage-menu">
+                <md-menu-item onclick="window.showGoogleInfo()">
+                    <div slot="headline">About WebShell</div>
+                </md-menu-item>
+                <md-menu-item>
+                    <div slot="headline">System Settings</div>
+                </md-menu-item>
+            </md-menu>
+        </div>
+    </header>
+
+    <main>
+        <!-- HOME VIEW -->
+        <section id="view-home" class="view-section active">
+            <div class="hero-banner">
+                <h2>Node.js In Your Browser</h2>
+                <p>WebContainers APIとMaterial 3 Designを組み合わせた、ブラウザ完結型のターミナル＆開発環境です。サーバー構築なしで即座にNode.js環境を利用できます。</p>
+                <div class="flex-row-wrap">
+                    <md-filled-button id="boot-btn" onclick="window.bootWebContainer()">
+                        <md-icon slot="icon"><span class="material-symbols-outlined">power_settings_new</span></md-icon>
+                        Boot Environment
+                    </md-filled-button>
+                    <md-outlined-button onclick="window.showGoogleInfo()">詳細を見る</md-outlined-button>
+                </div>
+            </div>
+
+            <!-- Boot Progress indicator -->
+            <div id="boot-progress-container">
+                <md-circular-progress indeterminate></md-circular-progress>
+                <h3 style="margin-top: 16px; color: var(--md-sys-color-on-surface);">Booting WebContainer...</h3>
+                <p style="color: var(--md-sys-color-on-surface-variant); font-size: 14px;">Mounting file system and starting JSH shell</p>
+            </div>
+
+            <div class="section-card">
+                <div class="section-title">Environment Features</div>
+                <div class="m3-card elevated">
+                    <div class="m3-card-content">
+                        <div style="display:flex; align-items:center; gap: 12px; margin-bottom: 8px;">
+                            <span class="material-symbols-outlined" style="color:var(--md-sys-color-primary)">terminal</span>
+                            <h3 style="margin:0; font-family:var(--md-ref-typeface-brand);">Full Terminal Access</h3>
+                        </div>
+                        <p style="margin: 0; color: var(--md-sys-color-on-surface-variant); line-height: 1.5;">
+                            xterm.jsを統合し、ネイティブアプリ同等のターミナル操作を提供します。npmコマンドもフルサポート。
+                        </p>
+                    </div>
+                </div>
+                <div class="m3-card elevated">
+                    <div class="m3-card-content">
+                        <div style="display:flex; align-items:center; gap: 12px; margin-bottom: 8px;">
+                            <span class="material-symbols-outlined" style="color:var(--md-sys-color-primary)">code</span>
+                            <h3 style="margin:0; font-family:var(--md-ref-typeface-brand);">File Editor & Preview</h3>
+                        </div>
+                        <p style="margin: 0; color: var(--md-sys-color-on-surface-variant); line-height: 1.5;">
+                            仮想ファイルシステムに直接アクセスし、コードの編集・保存が可能。Expressサーバーを立ち上げてプレビューも一瞬で完了します。
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- TERMINAL VIEW -->
+        <section id="view-terminal" class="view-section">
+            <div class="section-card" style="padding: 16px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 12px;">
+                    <div class="section-title" style="margin-bottom:0;">Terminal</div>
+                    <md-filled-tonal-icon-button onclick="window.triggerFit()"><span class="material-symbols-outlined">aspect_ratio</span></md-filled-tonal-icon-button>
+                </div>
+                <!-- xterm.js container -->
+                <div id="terminal-container"></div>
+                <p style="margin-top:12px; font-size: 12px; color: var(--md-sys-color-outline);">
+                    Hint: Try running <code>npm install</code> and then <code>npm start</code> to boot the pre-configured express server.
+                </p>
+            </div>
+        </section>
+
+        <!-- EDITOR VIEW -->
+        <section id="view-editor" class="view-section">
+            <div class="section-card">
+                <div class="section-title">File Editor</div>
+                
+                <div style="display:flex; gap: 12px; margin-bottom: 16px; align-items:center; flex-wrap: wrap;">
+                    <md-outlined-text-field id="filename-input" label="Target Filename" value="index.js" style="flex: 1; min-width: 200px;">
+                        <md-icon slot="leading-icon"><span class="material-symbols-outlined">description</span></md-icon>
+                    </md-outlined-text-field>
+                    <md-filled-tonal-button onclick="window.loadFile()">
+                        <md-icon slot="icon"><span class="material-symbols-outlined">file_open</span></md-icon>Load
+                    </md-filled-tonal-button>
+                    <md-filled-button onclick="window.saveFile()">
+                        <md-icon slot="icon"><span class="material-symbols-outlined">save</span></md-icon>Save File
+                    </md-filled-button>
+                </div>
+                
+                <textarea id="file-content" class="code-textarea" placeholder="File content will appear here..."></textarea>
+            </div>
+
+            <div class="section-card" style="padding:0; overflow:hidden;">
+                <div style="padding:24px 24px 0 24px; display:flex; justify-content:space-between; align-items:center;">
+                    <div class="section-title" style="margin:0;">Directory Tree</div>
+                    <md-icon-button onclick="window.listFiles()"><span class="material-symbols-outlined">refresh</span></md-icon-button>
+                </div>
+                <md-list id="file-list-container" style="margin-top: 16px;">
+                    <md-list-item>
+                        <div slot="headline">No files loaded. Boot environment first.</div>
+                        <md-icon slot="start"><span class="material-symbols-outlined">info</span></md-icon>
+                    </md-list-item>
+                </md-list>
+            </div>
+        </section>
+
+        <!-- PREVIEW VIEW -->
+        <section id="view-preview" class="view-section">
+            <div class="section-card" style="display: flex; flex-direction: column;">
+                <div class="section-title">Server Preview</div>
+                <div class="m3-card elevated" style="margin-bottom: 16px;">
+                    <div class="m3-card-content" style="display:flex; align-items:center; justify-content:space-between;">
+                        <div style="display:flex; align-items:center; gap: 8px; overflow:hidden;">
+                            <span class="material-symbols-outlined" style="color:var(--md-sys-color-primary);">link</span>
+                            <span id="preview-url" style="font-family: monospace; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">No server running</span>
+                        </div>
+                        <div style="display:flex; gap: 8px;">
+                            <md-icon-button onclick="window.copyPreviewUrl()"><span class="material-symbols-outlined">content_copy</span></md-icon-button>
+                            <md-icon-button onclick="window.reloadPreview()"><span class="material-symbols-outlined">refresh</span></md-icon-button>
+                        </div>
+                    </div>
+                </div>
+                
+                <iframe id="preview-frame" src="about:blank"></iframe>
+            </div>
+        </section>
+    </main>
+
+    <!-- FAB -->
+    <div class="fab-container">
+        <md-fab variant="primary" label="New File" onclick="window.createNewFile()">
+            <md-icon slot="icon"><span class="material-symbols-outlined">add</span></md-icon>
+        </md-fab>
+    </div>
+
+    <!-- Navigation -->
+    <nav class="custom-nav">
+        <div class="nav-item active" id="nav-home" onclick="window.switchTab('home')">
+            <div class="nav-icon-container"><span class="material-symbols-outlined">home</span></div>
+            <span class="nav-label">Home</span>
+        </div>
+        <div class="nav-item" id="nav-terminal" onclick="window.switchTab('terminal')">
+            <div class="nav-icon-container"><span class="material-symbols-outlined">terminal</span></div>
+            <span class="nav-label">Terminal</span>
+        </div>
+        <div class="nav-item" id="nav-editor" onclick="window.switchTab('editor')">
+            <div class="nav-icon-container"><span class="material-symbols-outlined">code</span></div>
+            <span class="nav-label">Editor</span>
+        </div>
+        <div class="nav-item" id="nav-preview" onclick="window.switchTab('preview')">
+            <div class="nav-icon-container"><span class="material-symbols-outlined">preview</span></div>
+            <span class="nav-label">Preview</span>
+        </div>
+    </nav>
+
+    <!-- Info Dialog -->
+    <md-dialog id="info-dialog">
+        <div slot="headline">WebShell について</div>
+        <div slot="content">
+            <p>このアプリは、GoogleのMaterial 3カラーパレット「Google Blue」に準拠したUIと、WebContainers APIを統合したデモです。</p>
+            <ul>
+                <li><strong>WebContainers:</strong> ブラウザ内で直接Node.js環境を起動します。</li>
+                <li><strong>xterm.js:</strong> 完全なターミナルエミュレーター。</li>
+                <li><strong>COOP/COEP:</strong> <code>coi-serviceworker</code> を用いてセキュリティヘッダーの要件をクリアしています。</li>
+            </ul>
+        </div>
+        <div slot="actions">
+            <md-text-button onclick="document.getElementById('info-dialog').close()">閉じる</md-text-button>
+        </div>
+    </md-dialog>
+
+    <!-- Success Dialog -->
+    <md-dialog id="success-dialog">
+        <div slot="headline">Success</div>
+        <div slot="content">
+            <p>ファイルが正常に保存されました。</p>
+        </div>
+        <div slot="actions">
+            <md-text-button onclick="document.getElementById('success-dialog').close()">OK</md-text-button>
+        </div>
+    </md-dialog>
+
+    <!-- Server Ready Dialog -->
+    <md-dialog id="server-ready-dialog">
+        <div slot="headline">Server is Ready!</div>
+        <div slot="content">
+            <p>WebContainer内でサーバーが起動しました。<br>Previewタブから動作を確認できます。</p>
+        </div>
+        <div slot="actions">
+            <md-text-button onclick="document.getElementById('server-ready-dialog').close()">Close</md-text-button>
+            <md-filled-button onclick="document.getElementById('server-ready-dialog').close(); window.switchTab('preview');">Go to Preview</md-filled-button>
+        </div>
+    </md-dialog>
+
+    <script type="module">
+        import '@material/web/all.js';
+        import { WebContainer } from '@webcontainer/api';
+        import { Terminal } from 'xterm';
+        import { FitAddon } from 'xterm-addon-fit';
+
+        // --- State Management ---
+        let webcontainerInstance = null;
+        let shellProcess = null;
+        let terminal = null;
+        let fitAddon = null;
+        let currentPreviewUrl = '';
+
+        // --- Theme Management ---
+        let isDarkMode = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        
+        window.toggleDarkMode = function() {
+            isDarkMode = !isDarkMode;
+            document.body.setAttribute('data-theme', isDarkMode ? 'dark' : 'light');
+            
+            const icon = document.getElementById('theme-icon');
+            if(icon) icon.textContent = isDarkMode ? 'light_mode' : 'dark_mode';
+
+            // Update terminal theme dynamically
+            if (terminal) {
+                terminal.options.theme = isDarkMode ? {
+                    background: '#111111',
+                    foreground: '#e3e3e3',
+                    cursor: '#a8c7fa'
+                } : {
+                    background: '#111111', // Keep terminal dark generally for aesthetics, or switch if preferred
+                    foreground: '#ffffff',
+                    cursor: '#0b57d0'
+                };
+            }
+        };
+
+        if(isDarkMode) document.body.setAttribute('data-theme', 'dark');
+
+        // --- Navigation Logic ---
+        window.switchTab = function(tabId) {
+            document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+
+            const targetView = document.getElementById('view-' + tabId);
+            if(targetView) targetView.classList.add('active');
+
+            const targetNav = document.getElementById('nav-' + tabId);
+            if(targetNav) targetNav.classList.add('active');
+            
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+
+            // Specific tab actions
+            if (tabId === 'terminal' && fitAddon) {
+                // Delay fit slightly to ensure DOM is updated and container has dimensions
+                setTimeout(() => fitAddon.fit(), 50);
+            }
+            if (tabId === 'editor' && webcontainerInstance) {
+                window.listFiles();
+            }
+        };
+
+        window.triggerFit = function() {
+            if(fitAddon) fitAddon.fit();
+        }
+
+        window.addEventListener('resize', () => {
+            if (fitAddon && document.getElementById('view-terminal').classList.contains('active')) {
+                fitAddon.fit();
+            }
+        });
+
+        // --- Dialogs & Menus ---
+        window.showGoogleInfo = function() {
+            document.getElementById('info-dialog').show();
+        };
+
+        const menu = document.getElementById('usage-menu');
+        const anchor = document.getElementById('usage-anchor');
+        anchor.addEventListener('click', () => {
+            menu.open = !menu.open;
+        });
+
+        // --- WebContainer Core Logic ---
+        window.bootWebContainer = async function() {
+            if (webcontainerInstance) {
+                window.switchTab('terminal');
+                return;
+            }
+
+            const btn = document.getElementById('boot-btn');
+            const progress = document.getElementById('boot-progress-container');
+            btn.disabled = true;
+            progress.style.display = 'block';
+
+            try {
+                // Boot the WebContainer
+                webcontainerInstance = await WebContainer.boot();
+                
+                // Mount initial file system (Express server example)
+                await webcontainerInstance.mount({
+                    'package.json': {
+                        file: {
+                            contents: JSON.stringify({
+                                name: "webshell-demo",
+                                type: "module",
+                                scripts: {
+                                    start: "node index.js"
+                                },
+                                dependencies: {
+                                    "express": "latest"
+                                }
+                            }, null, 2)
+                        }
+                    },
+                    'index.js': {
+                        file: {
+                            contents: `import express from 'express';\nconst app = express();\n\napp.get('/', (req, res) => {\n  res.send('<div style="font-family: sans-serif; padding: 2rem; text-align: center; color: #0b57d0;"><h1>Hello from WebContainer Express App!</h1><p>Material 3 environment is running smoothly.</p></div>');\n});\n\napp.listen(3111, () => {\n  console.log('Server is successfully running on port 3111');\n});`
+                        }
+                    }
+                });
+
+                // Initialize Terminal
+                await initTerminal();
+
+                // Listen for server ready events
+                webcontainerInstance.on('server-ready', (port, url) => {
+                    console.log(`Server ready at ${url}:${port}`);
+                    currentPreviewUrl = url;
+                    document.getElementById('preview-url').innerText = url;
+                    document.getElementById('preview-frame').src = url;
+                    document.getElementById('server-ready-dialog').show();
+                });
+
+                // UI Update
+                progress.style.display = 'none';
+                btn.innerHTML = '<md-icon slot="icon"><span class="material-symbols-outlined">check_circle</span></md-icon>Environment Active';
+                
+                // Jump to terminal and list files
+                window.switchTab('terminal');
+                window.listFiles();
+
+            } catch (error) {
+                console.error("Boot error:", error);
+                alert("Failed to boot WebContainer. Please check browser console.\nNote: GitHub Pages requires coi-serviceworker.js at root.");
+                btn.disabled = false;
+                progress.style.display = 'none';
+            }
+        };
+
+        async function initTerminal() {
+            const termContainer = document.getElementById('terminal-container');
+            termContainer.innerHTML = '';
+            
+            terminal = new Terminal({
+                convertEol: true,
+                cursorBlink: true,
+                fontFamily: '"Courier New", Courier, monospace',
+                fontSize: 14,
+                theme: {
+                    background: '#111111',
+                    foreground: '#e3e3e3',
+                    cursor: isDarkMode ? '#a8c7fa' : '#0b57d0'
+                }
+            });
+            
+            fitAddon = new FitAddon();
+            terminal.loadAddon(fitAddon);
+            terminal.open(termContainer);
+            
+            // Spawn shell
+            shellProcess = await webcontainerInstance.spawn('jsh', {
+                terminal: {
+                    cols: terminal.cols,
+                    rows: terminal.rows,
+                },
+            });
+
+            // Connect output
+            shellProcess.output.pipeTo(new WritableStream({
+                write(data) {
+                    terminal.write(data);
+                }
+            }));
+
+            // Connect input
+            const input = shellProcess.input.getWriter();
+            terminal.onData((data) => {
+                input.write(data);
+            });
+
+            setTimeout(() => fitAddon.fit(), 100);
+        }
+
+        // --- File Editor Logic ---
+        window.listFiles = async function() {
+            if(!webcontainerInstance) return;
+            try {
+                const files = await webcontainerInstance.fs.readdir('/', { withFileTypes: true });
+                const listContainer = document.getElementById('file-list-container');
+                listContainer.innerHTML = '';
+                
+                files.forEach(file => {
+                    const el = document.createElement('md-list-item');
+                    el.type = 'button';
+                    
+                    const isDir = file.isDirectory();
+                    const iconName = isDir ? 'folder' : 'description';
+                    
+                    el.innerHTML = `
+                        <div slot="headline">${file.name}</div>
+                        <div slot="supporting-text">${isDir ? 'Directory' : 'File'}</div>
+                        <md-icon slot="start"><span class="material-symbols-outlined" style="color:var(--md-sys-color-primary)">${iconName}</span></md-icon>
+                        ${!isDir ? '<md-icon slot="end"><span class="material-symbols-outlined">edit</span></md-icon>' : ''}
+                    `;
+                    
+                    if(!isDir) {
+                        el.addEventListener('click', () => {
+                            document.getElementById('filename-input').value = file.name;
+                            window.loadFile();
+                            window.scrollTo({ top: 0, behavior: 'smooth' });
+                        });
+                    }
+                    
+                    listContainer.appendChild(el);
+                    
+                    const divider = document.createElement('md-divider');
+                    listContainer.appendChild(divider);
+                });
+            } catch(e) {
+                console.error("List files error:", e);
+            }
+        };
+
+        window.loadFile = async function() {
+            if(!webcontainerInstance) return;
+            const name = document.getElementById('filename-input').value;
+            if (!name) return;
+            
+            try {
+                const content = await webcontainerInstance.fs.readFile(name, 'utf-8');
+                document.getElementById('file-content').value = content;
+            } catch(e) {
+                console.error(e);
+                alert("Could not read file. It might not exist or is a directory.");
+            }
+        };
+
+        window.saveFile = async function() {
+            if(!webcontainerInstance) return;
+            const name = document.getElementById('filename-input').value;
+            const content = document.getElementById('file-content').value;
+            if (!name) return;
+            
+            try {
+                await webcontainerInstance.fs.writeFile(name, content);
+                window.listFiles(); // Refresh list in case it's a new file
+                document.getElementById('success-dialog').show();
+            } catch(e) {
+                console.error(e);
+                alert("Error saving file.");
+            }
+        };
+
+        window.createNewFile = function() {
+            window.switchTab('editor');
+            document.getElementById('filename-input').value = "new_script.js";
+            document.getElementById('file-content').value = "// Write your code here\n";
+            document.getElementById('file-content').focus();
+        };
+
+        // --- Preview Logic ---
+        window.reloadPreview = function() {
+            const frame = document.getElementById('preview-frame');
+            if(frame && currentPreviewUrl) {
+                frame.src = currentPreviewUrl;
+            }
+        };
+
+        window.copyPreviewUrl = function() {
+            if(currentPreviewUrl) {
+                navigator.clipboard.writeText(currentPreviewUrl).then(() => {
+                    console.log("URL copied");
+                });
+            }
+        }
+
+    </script>
+</body>
+</html>
